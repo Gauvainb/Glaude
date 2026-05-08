@@ -171,6 +171,16 @@
       <label>Token API Atlassian</label>
       <input id="inp-token" type="password" placeholder="Votre token API" autocomplete="current-password">
     </div>
+    <details style="margin-top:14px">
+      <summary style="font-size:.78rem;color:var(--muted);cursor:pointer;user-select:none">⚙ Paramètres avancés (CORS proxy)</summary>
+      <div class="form-group" style="margin-top:10px">
+        <label>URL Proxy CORS <span style="font-weight:400;opacity:.7">(requis depuis GitHub Pages)</span></label>
+        <input id="inp-proxy" type="url" placeholder="https://votre-worker.workers.dev" autocomplete="off">
+        <div style="font-size:.73rem;color:var(--muted);margin-top:4px">
+          Déployez <strong>cloudflare-worker.js</strong> sur <a href="https://workers.cloudflare.com" target="_blank" style="color:var(--accent)">Cloudflare Workers</a> (gratuit) et collez l'URL ici.
+        </div>
+      </div>
+    </details>
     <div class="login-footer">
       <span class="hint">Pas encore de token ? <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank">Créer →</a></span>
       <button class="btn-primary" id="login-btn" onclick="doLogin()">Connexion</button>
@@ -306,9 +316,12 @@ function getAuth() {
 function doLogin() {
   const email = document.getElementById('inp-email').value.trim();
   const token = document.getElementById('inp-token').value.trim();
+  const proxy = (document.getElementById('inp-proxy').value || '').trim();
   if (!email || !token) { showLoginErr('Veuillez renseigner email et token.'); return; }
   localStorage.setItem('tma_email', email);
   localStorage.setItem('tma_token', token);
+  if (proxy) localStorage.setItem('tma_proxy', proxy);
+  else localStorage.removeItem('tma_proxy');
   hideLoginErr();
   document.getElementById('login-overlay').style.display = 'none';
   document.getElementById('dashboard').style.display = 'block';
@@ -318,6 +331,7 @@ function doLogin() {
 function doLogout() {
   localStorage.removeItem('tma_email');
   localStorage.removeItem('tma_token');
+  localStorage.removeItem('tma_proxy');
   document.getElementById('login-overlay').style.display = 'flex';
   document.getElementById('dashboard').style.display = 'none';
 }
@@ -443,8 +457,13 @@ function extractBlockedPeriods(histories) {
    JIRA API
 ══════════════════════════════════════════════════ */
 async function jiraGet(path) {
-  const auth = getAuth();
-  const res = await fetch(CFG.jiraBase + path, {
+  const auth  = getAuth();
+  const proxy = localStorage.getItem('tma_proxy') || '';
+  const full  = CFG.jiraBase + path;
+  const url   = proxy
+    ? proxy.replace(/\/$/, '') + '?url=' + encodeURIComponent(full)
+    : full;
+  const res = await fetch(url, {
     headers: { 'Authorization': auth, 'Accept': 'application/json' }
   });
   if (!res.ok) {
@@ -763,10 +782,14 @@ function showBanner(type, msg) {
     document.getElementById('login-overlay').style.display = 'none';
     document.getElementById('dashboard').style.display = 'block';
     doRefresh();
+  } else {
+    const savedEmail = localStorage.getItem('tma_email');
+    const savedProxy = localStorage.getItem('tma_proxy');
+    if (savedEmail) document.getElementById('inp-email').value = savedEmail;
+    if (savedProxy) document.getElementById('inp-proxy').value = savedProxy;
   }
 
-  // Enter key on login form
-  ['inp-email', 'inp-token'].forEach(id =>
+  ['inp-email', 'inp-token', 'inp-proxy'].forEach(id =>
     document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); })
   );
 })();
