@@ -171,6 +171,16 @@
       <label>Token API Atlassian</label>
       <input id="inp-token" type="password" placeholder="Votre token API" autocomplete="current-password">
     </div>
+    <details style="margin-top:14px">
+      <summary style="font-size:.78rem;color:var(--muted);cursor:pointer;user-select:none">⚙ Paramètres avancés (CORS proxy)</summary>
+      <div class="form-group" style="margin-top:10px">
+        <label>URL Proxy CORS <span style="font-weight:400;opacity:.7">(requis depuis GitHub Pages)</span></label>
+        <input id="inp-proxy" type="url" placeholder="https://votre-worker.workers.dev" autocomplete="off">
+        <div style="font-size:.73rem;color:var(--muted);margin-top:4px">
+          Déployez <strong>cloudflare-worker.js</strong> sur <a href="https://workers.cloudflare.com" target="_blank" style="color:var(--accent)">Cloudflare Workers</a> (gratuit) et collez l'URL ici.
+        </div>
+      </div>
+    </details>
     <div class="login-footer">
       <span class="hint">Pas encore de token ? <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank">Créer →</a></span>
       <button class="btn-primary" id="login-btn" onclick="doLogin()">Connexion</button>
@@ -272,21 +282,31 @@
 </div>
 
 <script>
+/* ══════════════════════════════════════════════════
+   CONFIG
+══════════════════════════════════════════════════ */
 const CFG = {
   jiraBase:         'https://cetim-si.atlassian.net',
   projectKey:       'TMA',
   uoField:          'customfield_10136',
   incidentTypeId:   '10025',
   evolutionTypeId:  '10027',
+  // Status names (lowercased substrings) considered as "blocked"
   blockedKeywords:  ['blocked', 'bloqué', 'bloque', 'en attente', 'on hold', 'waiting'],
 };
 
+/* ══════════════════════════════════════════════════
+   STATE
+══════════════════════════════════════════════════ */
 let allIssues    = [];
 let activeFilter = 'all';
 let sortState    = { key: 'key', dir: 1 };
 let chartMonthly = null;
 let chartStatus  = null;
 
+/* ══════════════════════════════════════════════════
+   AUTH
+══════════════════════════════════════════════════ */
 function getAuth() {
   const e = localStorage.getItem('tma_email');
   const t = localStorage.getItem('tma_token');
@@ -296,9 +316,12 @@ function getAuth() {
 function doLogin() {
   const email = document.getElementById('inp-email').value.trim();
   const token = document.getElementById('inp-token').value.trim();
+  const proxy = (document.getElementById('inp-proxy').value || '').trim();
   if (!email || !token) { showLoginErr('Veuillez renseigner email et token.'); return; }
   localStorage.setItem('tma_email', email);
   localStorage.setItem('tma_token', token);
+  if (proxy) localStorage.setItem('tma_proxy', proxy);
+  else localStorage.removeItem('tma_proxy');
   hideLoginErr();
   document.getElementById('login-overlay').style.display = 'none';
   document.getElementById('dashboard').style.display = 'block';
@@ -308,6 +331,7 @@ function doLogin() {
 function doLogout() {
   localStorage.removeItem('tma_email');
   localStorage.removeItem('tma_token');
+  localStorage.removeItem('tma_proxy');
   document.getElementById('login-overlay').style.display = 'flex';
   document.getElementById('dashboard').style.display = 'none';
 }
@@ -318,7 +342,11 @@ function showLoginErr(msg) {
 }
 function hideLoginErr() { document.getElementById('login-err').style.display = 'none'; }
 
+/* ══════════════════════════════════════════════════
+   FRENCH PUBLIC HOLIDAYS (jours fériés)
+══════════════════════════════════════════════════ */
 function easterDate(Y) {
+  // Oudin / Anonymous Gregorian algorithm
   const a = Y % 19, b = Math.floor(Y/100), c = Y % 100;
   const d = Math.floor(b/4), e = b % 4;
   const f = Math.floor((b+8)/25), g = Math.floor((b-f+1)/3);
@@ -333,20 +361,20 @@ function easterDate(Y) {
 
 function frenchHolidays(year) {
   const ea = easterDate(year);
-  const D  = 86400000;
+  const D  = 86400000; // ms per day
   const add = n => new Date(ea.getTime() + n * D);
   return new Set([
-    new Date(year, 0, 1),
-    add(1),
-    new Date(year, 4, 1),
-    new Date(year, 4, 8),
-    add(39),
-    add(50),
-    new Date(year, 6, 14),
-    new Date(year, 7, 15),
-    new Date(year, 10, 1),
-    new Date(year, 10, 11),
-    new Date(year, 11, 25),
+    new Date(year, 0, 1),   // 1er janvier
+    add(1),                  // Lundi de Pâques
+    new Date(year, 4, 1),   // Fête du travail
+    new Date(year, 4, 8),   // Victoire 1945
+    add(39),                 // Ascension
+    add(50),                 // Lundi de Pentecôte
+    new Date(year, 6, 14),  // Fête Nationale
+    new Date(year, 7, 15),  // Assomption
+    new Date(year, 10, 1),  // Toussaint
+    new Date(year, 10, 11), // Armistice
+    new Date(year, 11, 25), // Noël
   ].map(d => ymd(d)));
 }
 
@@ -366,10 +394,13 @@ function ymd(dt) {
 
 function isWorkingDay(dt, holidays) {
   const dow = dt.getDay();
-  if (dow === 0 || dow === 6) return false;
+  if (dow === 0 || dow === 6) return false;    // weekend
   return !holidays.has(ymd(dt));
 }
 
+/* ══════════════════════════════════════════════════
+   WORKING DAYS CALCULATOR
+══════════════════════════════════════════════════ */
 function countWorkingDays(start, end, blockedPeriods, holidays) {
   const cur = new Date(start); cur.setHours(0,0,0,0);
   const fin = new Date(end);   fin.setHours(23,59,59,999);
@@ -422,9 +453,17 @@ function extractBlockedPeriods(histories) {
   return periods;
 }
 
+/* ══════════════════════════════════════════════════
+   JIRA API
+══════════════════════════════════════════════════ */
 async function jiraGet(path) {
-  const auth = getAuth();
-  const res = await fetch(CFG.jiraBase + path, {
+  const auth  = getAuth();
+  const proxy = localStorage.getItem('tma_proxy') || '';
+  const full  = CFG.jiraBase + path;
+  const url   = proxy
+    ? proxy.replace(/\/$/, '') + '?url=' + encodeURIComponent(full)
+    : full;
+  const res = await fetch(url, {
     headers: { 'Authorization': auth, 'Accept': 'application/json' }
   });
   if (!res.ok) {
@@ -464,6 +503,9 @@ async function fetchChangelog(key) {
   return (data.changelog || {}).histories || [];
 }
 
+/* ══════════════════════════════════════════════════
+   RENDER HELPERS
+══════════════════════════════════════════════════ */
 function fmtEuro(v) {
   if (v == null || v === '') return '–';
   return new Intl.NumberFormat('fr-FR', { style:'currency', currency:'EUR', minimumFractionDigits:0, maximumFractionDigits:0 }).format(v);
@@ -488,6 +530,9 @@ function wdClass(days) {
   return 'wd-bad';
 }
 
+/* ══════════════════════════════════════════════════
+   KPI
+══════════════════════════════════════════════════ */
 function renderKPIs(issues, year) {
   document.getElementById('yr-a').textContent = year;
   document.getElementById('yr-b').textContent = year;
@@ -509,6 +554,9 @@ function renderKPIs(issues, year) {
   document.getElementById('kpi-uo-evo').textContent = fmtEuro(uoEvo);
 }
 
+/* ══════════════════════════════════════════════════
+   CHARTS
+══════════════════════════════════════════════════ */
 function renderCharts(issues) {
   const months = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
   const byMonthInc = new Array(12).fill(0);
@@ -520,6 +568,7 @@ function renderCharts(issues) {
     else byMonthEvo[m]++;
   }
 
+  // Monthly bar chart
   const ctx1 = document.getElementById('chart-monthly').getContext('2d');
   if (chartMonthly) chartMonthly.destroy();
   chartMonthly = new Chart(ctx1, {
@@ -541,6 +590,7 @@ function renderCharts(issues) {
     }
   });
 
+  // Status doughnut
   const statusMap = {};
   for (const issue of issues) {
     const s = issue.fields.status.name;
@@ -562,6 +612,9 @@ function renderCharts(issues) {
   });
 }
 
+/* ══════════════════════════════════════════════════
+   TABLE
+══════════════════════════════════════════════════ */
 function setFilter(f, btn) {
   activeFilter = f;
   document.querySelectorAll('.f-btn').forEach(b => b.classList.remove('active'));
@@ -627,6 +680,9 @@ function renderTable() {
   }).join('');
 }
 
+/* ══════════════════════════════════════════════════
+   MAIN REFRESH
+══════════════════════════════════════════════════ */
 async function doRefresh() {
   const auth = getAuth();
   if (!auth) return;
@@ -639,7 +695,10 @@ async function doRefresh() {
   showBanner('info', null);
 
   try {
+    // ── 1. Fetch all issues ──
     allIssues = await fetchIssues(year);
+
+    // ── 2. Quick render with partial data ──
     renderKPIs(allIssues, year);
     renderCharts(allIssues);
     renderTable();
@@ -649,6 +708,7 @@ async function doRefresh() {
       return;
     }
 
+    // ── 3. Fetch changelogs in batches ──
     const clProg  = document.getElementById('cl-progress');
     const clFill  = document.getElementById('cl-fill');
     const clLabel = document.getElementById('cl-label');
@@ -686,7 +746,7 @@ async function doRefresh() {
   } catch (err) {
     let msg = err.message;
     if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('cors')) {
-      msg += '\n\nCORS : si vous ouvrez ce fichier en local (file://), servez-le via un serveur HTTP local.';
+      msg += '\n\nCORS : si vous ouvrez ce fichier en local (file://), servez-le via un serveur HTTP local (ex: python3 -m http.server 8080).';
     }
     showBanner('err', msg);
     console.error(err);
@@ -695,6 +755,9 @@ async function doRefresh() {
   }
 }
 
+/* ══════════════════════════════════════════════════
+   UI HELPERS
+══════════════════════════════════════════════════ */
 function setLoading(on, text) {
   const el  = document.getElementById('hdr-loading');
   const btn = document.getElementById('refresh-btn');
@@ -710,14 +773,23 @@ function showBanner(type, msg) {
   if (msg) el.textContent = msg;
 }
 
+/* ══════════════════════════════════════════════════
+   INIT
+══════════════════════════════════════════════════ */
 (function init() {
   const auth = getAuth();
   if (auth) {
     document.getElementById('login-overlay').style.display = 'none';
     document.getElementById('dashboard').style.display = 'block';
     doRefresh();
+  } else {
+    const savedEmail = localStorage.getItem('tma_email');
+    const savedProxy = localStorage.getItem('tma_proxy');
+    if (savedEmail) document.getElementById('inp-email').value = savedEmail;
+    if (savedProxy) document.getElementById('inp-proxy').value = savedProxy;
   }
-  ['inp-email', 'inp-token'].forEach(id =>
+
+  ['inp-email', 'inp-token', 'inp-proxy'].forEach(id =>
     document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); })
   );
 })();
