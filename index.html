@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard TMA – Cetim</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:        #0f172a;
+      --surface:   #1e293b;
+      --surface2:  #334155;
+      --border:    #475569;
+      --accent:    #3b82f6;
+      --green:     #10b981;
+      --red:       #ef4444;
+      --amber:     #f59e0b;
+      --purple:    #8b5cf6;
+      --text:      #f1f5f9;
+      --muted:     #94a3b8;
+      --radius:    12px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    /* ── Login ── */
+    #login-overlay {
+      position: fixed; inset: 0; background: var(--bg);
+      display: flex; align-items: center; justify-content: center; z-index: 100;
+    }
+    .login-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 40px; width: 420px;
+      box-shadow: 0 8px 40px rgba(0,0,0,.5);
+    }
+    .login-card h2 { font-size: 1.4rem; color: var(--accent); margin-bottom: 6px; }
+    .login-card p  { color: var(--muted); font-size: .85rem; margin-bottom: 24px; line-height: 1.5; }
+    .form-group { margin-bottom: 14px; }
+    label { display: block; font-size: .8rem; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+    input {
+      width: 100%; padding: 10px 13px; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); font-size: .9rem; outline: none; transition: border-color .2s;
+    }
+    input:focus { border-color: var(--accent); }
+    .login-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; }
+    .hint { font-size: .75rem; color: var(--muted); }
+    .hint a { color: var(--accent); }
+    button { cursor: pointer; border: none; border-radius: 8px; font-weight: 600; transition: all .15s; }
+    .btn-primary { background: var(--accent); color: #fff; padding: 10px 22px; font-size: .9rem; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-primary:disabled { opacity: .5; cursor: default; }
+    .btn-sm { background: var(--surface2); color: var(--text); padding: 7px 14px; font-size: .82rem; border: 1px solid var(--border); }
+    .btn-sm:hover { background: var(--border); }
+
+    /* ── Dashboard shell ── */
+    #dashboard { max-width: 1440px; margin: 0 auto; padding: 20px 24px; }
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 24px; padding-bottom: 18px; border-bottom: 1px solid var(--border);
+    }
+    header h1 { font-size: 1.5rem; font-weight: 700; }
+    header h1 span { color: var(--accent); }
+    .header-right { display: flex; align-items: center; gap: 12px; }
+    .last-refresh { font-size: .78rem; color: var(--muted); }
+    .spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid var(--border); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Error / info banner ── */
+    .banner {
+      border-radius: 8px; padding: 12px 16px; font-size: .85rem; margin-bottom: 18px;
+    }
+    .banner-error { background: rgba(239,68,68,.1); border: 1px solid var(--red); color: var(--red); }
+    .banner-info  { background: rgba(59,130,246,.1); border: 1px solid var(--accent); color: var(--accent); }
+
+    /* ── KPI Cards ── */
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+    .kpi-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 18px 20px; position: relative; overflow: hidden;
+    }
+    .kpi-card::after {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      border-radius: var(--radius) var(--radius) 0 0;
+    }
+    .kpi-card.c-red::after    { background: var(--red); }
+    .kpi-card.c-blue::after   { background: var(--accent); }
+    .kpi-card.c-amber::after  { background: var(--amber); }
+    .kpi-card.c-green::after  { background: var(--green); }
+    .kpi-label { font-size: .73rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 8px; }
+    .kpi-value { font-size: 2rem; font-weight: 800; line-height: 1; }
+    .kpi-card.c-red   .kpi-value { color: var(--red); }
+    .kpi-card.c-blue  .kpi-value { color: var(--accent); }
+    .kpi-card.c-amber .kpi-value { color: var(--amber); }
+    .kpi-card.c-green .kpi-value { color: var(--green); }
+    .kpi-sub { font-size: .77rem; color: var(--muted); margin-top: 6px; }
+
+    /* ── Charts ── */
+    .charts-row { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-bottom: 20px; }
+    .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; }
+    .card-title { font-size: .85rem; font-weight: 600; color: var(--muted); margin-bottom: 14px; }
+
+    /* ── Progress ── */
+    .progress-wrap { margin-bottom: 16px; }
+    .progress-label { font-size: .78rem; color: var(--muted); margin-bottom: 5px; }
+    .progress-track { height: 4px; background: var(--surface2); border-radius: 4px; overflow: hidden; }
+    .progress-fill  { height: 100%; background: var(--accent); width: 0%; transition: width .3s; border-radius: 4px; }
+
+    /* ── Table card ── */
+    .table-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .table-top {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 20px; border-bottom: 1px solid var(--border);
+    }
+    .table-top h3 { font-size: .9rem; font-weight: 600; }
+    .filters { display: flex; gap: 6px; }
+    .f-btn {
+      padding: 4px 13px; border-radius: 20px; font-size: .78rem; font-weight: 600;
+      border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer;
+    }
+    .f-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .table-scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+    th {
+      padding: 10px 14px; text-align: left; font-size: .72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+      background: var(--surface2); cursor: pointer; white-space: nowrap; user-select: none;
+    }
+    th:hover { color: var(--text); }
+    th.sorted { color: var(--accent); }
+    td { padding: 10px 14px; border-top: 1px solid var(--border); vertical-align: middle; }
+    tr:hover td { background: rgba(255,255,255,.02); }
+    .badge {
+      display: inline-block; padding: 2px 9px; border-radius: 12px; font-size: .73rem; font-weight: 700;
+    }
+    .b-incident  { background: rgba(239,68,68,.15); color: var(--red); }
+    .b-evolution { background: rgba(59,130,246,.15); color: var(--accent); }
+    .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
+    .d-open  { background: var(--amber); }
+    .d-done  { background: var(--green); }
+    .d-other { background: var(--muted); }
+    a.jira-link { color: var(--accent); text-decoration: none; font-weight: 700; }
+    a.jira-link:hover { text-decoration: underline; }
+    .num-cell { text-align: right; font-variant-numeric: tabular-nums; }
+    .wd-good { color: var(--green); font-weight: 700; }
+    .wd-warn { color: var(--amber); font-weight: 700; }
+    .wd-bad  { color: var(--red);   font-weight: 700; }
+
+    /* ── Responsive ── */
+    @media (max-width: 1000px) { .kpi-grid { grid-template-columns: repeat(2,1fr); } .charts-row { grid-template-columns: 1fr; } }
+    @media (max-width: 600px)  { .kpi-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════ LOGIN ══════════════ -->
+<div id="login-overlay">
+  <div class="login-card">
+    <h2>Dashboard TMA – Cetim</h2>
+    <p>Entrez vos identifiants Jira pour accéder au tableau de bord.<br>
+       Vos credentials sont stockés localement dans le navigateur.</p>
+    <div id="login-err" class="banner banner-error" style="display:none"></div>
+    <div class="form-group">
+      <label>Email Jira</label>
+      <input id="inp-email" type="email" placeholder="prenom.nom@cetim.fr" autocomplete="email">
+    </div>
+    <div class="form-group">
+      <label>Token API Atlassian</label>
+      <input id="inp-token" type="password" placeholder="Votre token API" autocomplete="current-password">
+    </div>
+    <div class="login-footer">
+      <span class="hint">Pas encore de token ? <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank">Créer →</a></span>
+      <button class="btn-primary" id="login-btn" onclick="doLogin()">Connexion</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ DASHBOARD ══════════════ -->
+<div id="dashboard" style="display:none">
+  <header>
+    <div>
+      <h1>Dashboard <span>TMA</span> – Cetim</h1>
+      <div class="last-refresh" id="last-refresh"></div>
+    </div>
+    <div class="header-right">
+      <span id="hdr-loading" style="display:none;font-size:.82rem;color:var(--muted)">
+        <span class="spinner"></span><span id="hdr-loading-text">Chargement…</span>
+      </span>
+      <button class="btn-primary" id="refresh-btn" onclick="doRefresh()">⟳ Actualiser</button>
+      <button class="btn-sm" onclick="doLogout()">Déconnexion</button>
+    </div>
+  </header>
+
+  <div id="err-banner" class="banner banner-error" style="display:none"></div>
+  <div id="info-banner" class="banner banner-info" style="display:none"></div>
+
+  <!-- KPI Cards -->
+  <div class="kpi-grid">
+    <div class="kpi-card c-red">
+      <div class="kpi-label">Incidents <span id="yr-a"></span></div>
+      <div class="kpi-value" id="kpi-incidents">–</div>
+      <div class="kpi-sub" id="kpi-incidents-sub"></div>
+    </div>
+    <div class="kpi-card c-blue">
+      <div class="kpi-label">Évolutions <span id="yr-b"></span></div>
+      <div class="kpi-value" id="kpi-evolutions">–</div>
+      <div class="kpi-sub" id="kpi-evolutions-sub"></div>
+    </div>
+    <div class="kpi-card c-amber">
+      <div class="kpi-label">UO Euros – Incidents</div>
+      <div class="kpi-value" id="kpi-uo-inc">–</div>
+      <div class="kpi-sub">Total champ UO TMA – euros</div>
+    </div>
+    <div class="kpi-card c-green">
+      <div class="kpi-label">UO Euros – Évolutions</div>
+      <div class="kpi-value" id="kpi-uo-evo">–</div>
+      <div class="kpi-sub">Total champ UO TMA – euros</div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts-row">
+    <div class="chart-card">
+      <div class="card-title">Tickets par mois (Incidents &amp; Évolutions)</div>
+      <canvas id="chart-monthly" height="90"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="card-title">Répartition par statut</div>
+      <canvas id="chart-status" height="180"></canvas>
+    </div>
+  </div>
+
+  <!-- Changelog progress -->
+  <div class="progress-wrap" id="cl-progress" style="display:none">
+    <div class="progress-label" id="cl-label">Récupération des historiques de statuts…</div>
+    <div class="progress-track"><div class="progress-fill" id="cl-fill"></div></div>
+  </div>
+
+  <!-- Resolution table -->
+  <div class="table-card">
+    <div class="table-top">
+      <h3>Délai de résolution par ticket (jours ouvrés, hors bloqué)</h3>
+      <div class="filters">
+        <button class="f-btn active" onclick="setFilter('all',this)">Tous</button>
+        <button class="f-btn" onclick="setFilter('Incident',this)">Incidents</button>
+        <button class="f-btn" onclick="setFilter('Evolution',this)">Évolutions</button>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th onclick="doSort('key')">Ticket</th>
+            <th onclick="doSort('type')">Type</th>
+            <th onclick="doSort('summary')">Résumé</th>
+            <th onclick="doSort('component')">Composant</th>
+            <th onclick="doSort('status')">Statut</th>
+            <th onclick="doSort('created')">Créé le</th>
+            <th onclick="doSort('resolved')">Résolu le</th>
+            <th class="num-cell" onclick="doSort('wd')" title="Jours ouvrés nets (hors week-ends, jours fériés, temps bloqué)">Délai j.ouv.</th>
+            <th class="num-cell" onclick="doSort('bd')" title="Jours ouvrés passés en statut Bloqué">Bloqué j.ouv.</th>
+            <th class="num-cell" onclick="doSort('uo')" title="Champ UO TMA – euros">UO Euros</th>
+          </tr>
+        </thead>
+        <tbody id="tbl-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const CFG = {
+  jiraBase:         'https://cetim-si.atlassian.net',
+  projectKey:       'TMA',
+  uoField:          'customfield_10136',
+  incidentTypeId:   '10025',
+  evolutionTypeId:  '10027',
+  blockedKeywords:  ['blocked', 'bloqué', 'bloque', 'en attente', 'on hold', 'waiting'],
+};
+
+let allIssues    = [];
+let activeFilter = 'all';
+let sortState    = { key: 'key', dir: 1 };
+let chartMonthly = null;
+let chartStatus  = null;
+
+function getAuth() {
+  const e = localStorage.getItem('tma_email');
+  const t = localStorage.getItem('tma_token');
+  return (e && t) ? `Basic ${btoa(e + ':' + t)}` : null;
+}
+
+function doLogin() {
+  const email = document.getElementById('inp-email').value.trim();
+  const token = document.getElementById('inp-token').value.trim();
+  if (!email || !token) { showLoginErr('Veuillez renseigner email et token.'); return; }
+  localStorage.setItem('tma_email', email);
+  localStorage.setItem('tma_token', token);
+  hideLoginErr();
+  document.getElementById('login-overlay').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  doRefresh();
+}
+
+function doLogout() {
+  localStorage.removeItem('tma_email');
+  localStorage.removeItem('tma_token');
+  document.getElementById('login-overlay').style.display = 'flex';
+  document.getElementById('dashboard').style.display = 'none';
+}
+
+function showLoginErr(msg) {
+  const el = document.getElementById('login-err');
+  el.textContent = msg; el.style.display = 'block';
+}
+function hideLoginErr() { document.getElementById('login-err').style.display = 'none'; }
+
+function easterDate(Y) {
+  const a = Y % 19, b = Math.floor(Y/100), c = Y % 100;
+  const d = Math.floor(b/4), e = b % 4;
+  const f = Math.floor((b+8)/25), g = Math.floor((b-f+1)/3);
+  const h = (19*a + b - d - g + 15) % 30;
+  const i = Math.floor(c/4), k = c % 4;
+  const l = (32 + 2*e + 2*i - h - k) % 7;
+  const m = Math.floor((a + 11*h + 22*l) / 451);
+  const mo = Math.floor((h + l - 7*m + 114) / 31);
+  const dy = ((h + l - 7*m + 114) % 31) + 1;
+  return new Date(Y, mo - 1, dy);
+}
+
+function frenchHolidays(year) {
+  const ea = easterDate(year);
+  const D  = 86400000;
+  const add = n => new Date(ea.getTime() + n * D);
+  return new Set([
+    new Date(year, 0, 1),
+    add(1),
+    new Date(year, 4, 1),
+    new Date(year, 4, 8),
+    add(39),
+    add(50),
+    new Date(year, 6, 14),
+    new Date(year, 7, 15),
+    new Date(year, 10, 1),
+    new Date(year, 10, 11),
+    new Date(year, 11, 25),
+  ].map(d => ymd(d)));
+}
+
+function buildHolidaySet(year) {
+  return new Set([
+    ...frenchHolidays(year - 1),
+    ...frenchHolidays(year),
+    ...frenchHolidays(year + 1),
+  ]);
+}
+
+function ymd(dt) {
+  return dt.getFullYear() + '-' +
+    String(dt.getMonth()+1).padStart(2,'0') + '-' +
+    String(dt.getDate()).padStart(2,'0');
+}
+
+function isWorkingDay(dt, holidays) {
+  const dow = dt.getDay();
+  if (dow === 0 || dow === 6) return false;
+  return !holidays.has(ymd(dt));
+}
+
+function countWorkingDays(start, end, blockedPeriods, holidays) {
+  const cur = new Date(start); cur.setHours(0,0,0,0);
+  const fin = new Date(end);   fin.setHours(23,59,59,999);
+  let count = 0;
+  while (cur <= fin) {
+    if (isWorkingDay(cur, holidays)) {
+      const s = new Date(cur); s.setHours(0,0,0,0);
+      const e = new Date(cur); e.setHours(23,59,59,999);
+      const blocked = blockedPeriods.some(p => p.start <= e && p.end >= s);
+      if (!blocked) count++;
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
+}
+
+function countBlockedWorkingDays(blockedPeriods, holidays) {
+  let total = 0;
+  for (const p of blockedPeriods) {
+    const cur = new Date(p.start); cur.setHours(0,0,0,0);
+    const fin = new Date(p.end);   fin.setHours(23,59,59,999);
+    while (cur <= fin) {
+      if (isWorkingDay(cur, holidays)) total++;
+      cur.setDate(cur.getDate() + 1);
+    }
+  }
+  return total;
+}
+
+function extractBlockedPeriods(histories) {
+  const periods = [];
+  let blockedSince = null;
+  const sorted = [...histories].sort((a,b) => new Date(a.created) - new Date(b.created));
+  for (const h of sorted) {
+    for (const item of (h.items || [])) {
+      if (item.field !== 'status') continue;
+      const toName   = (item.toString   || '').toLowerCase();
+      const fromName = (item.fromString || '').toLowerCase();
+      const toBlk   = CFG.blockedKeywords.some(k => toName.includes(k));
+      const fromBlk = CFG.blockedKeywords.some(k => fromName.includes(k));
+      if (toBlk && !blockedSince) {
+        blockedSince = new Date(h.created);
+      } else if (fromBlk && blockedSince) {
+        periods.push({ start: blockedSince, end: new Date(h.created) });
+        blockedSince = null;
+      }
+    }
+  }
+  if (blockedSince) periods.push({ start: blockedSince, end: new Date() });
+  return periods;
+}
+
+async function jiraGet(path) {
+  const auth = getAuth();
+  const res = await fetch(CFG.jiraBase + path, {
+    headers: { 'Authorization': auth, 'Accept': 'application/json' }
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`Jira API ${res.status}: ${txt.slice(0,200)}`);
+  }
+  return res.json();
+}
+
+async function fetchIssues(year) {
+  const fields = [
+    'summary','status','issuetype','created','resolutiondate',
+    'components','assignee','priority', CFG.uoField
+  ].join(',');
+
+  const jql = encodeURIComponent(
+    `project = ${CFG.projectKey}` +
+    ` AND issuetype in (Incident, Evolution)` +
+    ` AND created >= "${year}-01-01"` +
+    ` AND created <= "${year}-12-31"` +
+    ` ORDER BY created ASC`
+  );
+
+  let issues = [], start = 0;
+  const MAX = 100;
+  while (true) {
+    const data = await jiraGet(`/rest/api/3/search?jql=${jql}&fields=${fields}&maxResults=${MAX}&startAt=${start}`);
+    issues = issues.concat(data.issues || []);
+    if (issues.length >= data.total || !(data.issues||[]).length) break;
+    start += MAX;
+  }
+  return issues;
+}
+
+async function fetchChangelog(key) {
+  const data = await jiraGet(`/rest/api/3/issue/${key}?expand=changelog&fields=status,created,resolutiondate`);
+  return (data.changelog || {}).histories || [];
+}
+
+function fmtEuro(v) {
+  if (v == null || v === '') return '–';
+  return new Intl.NumberFormat('fr-FR', { style:'currency', currency:'EUR', minimumFractionDigits:0, maximumFractionDigits:0 }).format(v);
+}
+
+function fmtDate(s) {
+  if (!s) return '–';
+  return new Date(s).toLocaleDateString('fr-FR');
+}
+
+function statusDotClass(name) {
+  const s = name.toLowerCase();
+  if (/done|terminé|closed|résolu|clos|livré/.test(s)) return 'd-done';
+  if (/open|ouvert|new|todo|à faire/.test(s))           return 'd-open';
+  return 'd-other';
+}
+
+function wdClass(days) {
+  if (days == null) return '';
+  if (days <= 5)  return 'wd-good';
+  if (days <= 15) return 'wd-warn';
+  return 'wd-bad';
+}
+
+function renderKPIs(issues, year) {
+  document.getElementById('yr-a').textContent = year;
+  document.getElementById('yr-b').textContent = year;
+
+  const inc = issues.filter(i => i.fields.issuetype.id === CFG.incidentTypeId);
+  const evo = issues.filter(i => i.fields.issuetype.id === CFG.evolutionTypeId);
+
+  document.getElementById('kpi-incidents').textContent = inc.length;
+  document.getElementById('kpi-evolutions').textContent = evo.length;
+
+  const openInc = inc.filter(i => !i.fields.resolutiondate).length;
+  const openEvo = evo.filter(i => !i.fields.resolutiondate).length;
+  document.getElementById('kpi-incidents-sub').textContent  = `${openInc} en cours, ${inc.length - openInc} résolus`;
+  document.getElementById('kpi-evolutions-sub').textContent = `${openEvo} en cours, ${evo.length - openEvo} résolus`;
+
+  const uoInc = inc.reduce((s,i) => s + (parseFloat(i.fields[CFG.uoField]) || 0), 0);
+  const uoEvo = evo.reduce((s,i) => s + (parseFloat(i.fields[CFG.uoField]) || 0), 0);
+  document.getElementById('kpi-uo-inc').textContent = fmtEuro(uoInc);
+  document.getElementById('kpi-uo-evo').textContent = fmtEuro(uoEvo);
+}
+
+function renderCharts(issues) {
+  const months = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+  const byMonthInc = new Array(12).fill(0);
+  const byMonthEvo = new Array(12).fill(0);
+
+  for (const issue of issues) {
+    const m = new Date(issue.fields.created).getMonth();
+    if (issue.fields.issuetype.id === CFG.incidentTypeId) byMonthInc[m]++;
+    else byMonthEvo[m]++;
+  }
+
+  const ctx1 = document.getElementById('chart-monthly').getContext('2d');
+  if (chartMonthly) chartMonthly.destroy();
+  chartMonthly = new Chart(ctx1, {
+    type: 'bar',
+    data: {
+      labels: months,
+      datasets: [
+        { label:'Incidents', data: byMonthInc, backgroundColor:'rgba(239,68,68,.75)', borderColor:'#ef4444', borderWidth:1, borderRadius:4 },
+        { label:'Évolutions', data: byMonthEvo, backgroundColor:'rgba(59,130,246,.75)', borderColor:'#3b82f6', borderWidth:1, borderRadius:4 },
+      ]
+    },
+    options: {
+      responsive:true,
+      plugins:{ legend:{ labels:{ color:'#94a3b8', boxWidth:12 } } },
+      scales:{
+        x:{ ticks:{ color:'#94a3b8' }, grid:{ color:'#334155' } },
+        y:{ ticks:{ color:'#94a3b8' }, grid:{ color:'#334155' }, beginAtZero:true }
+      }
+    }
+  });
+
+  const statusMap = {};
+  for (const issue of issues) {
+    const s = issue.fields.status.name;
+    statusMap[s] = (statusMap[s]||0) + 1;
+  }
+  const COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316'];
+  const ctx2 = document.getElementById('chart-status').getContext('2d');
+  if (chartStatus) chartStatus.destroy();
+  chartStatus = new Chart(ctx2, {
+    type: 'doughnut',
+    data: {
+      labels: Object.keys(statusMap),
+      datasets:[{ data: Object.values(statusMap), backgroundColor: COLORS, borderWidth:0 }]
+    },
+    options:{
+      responsive:true,
+      plugins:{ legend:{ position:'right', labels:{ color:'#94a3b8', font:{size:11}, boxWidth:12 } } }
+    }
+  });
+}
+
+function setFilter(f, btn) {
+  activeFilter = f;
+  document.querySelectorAll('.f-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTable();
+}
+
+function doSort(key) {
+  sortState.dir = (sortState.key === key) ? -sortState.dir : 1;
+  sortState.key = key;
+  document.querySelectorAll('th').forEach(th => th.classList.remove('sorted'));
+  event.currentTarget.classList.add('sorted');
+  renderTable();
+}
+
+function renderTable() {
+  const issues = activeFilter === 'all'
+    ? allIssues
+    : allIssues.filter(i => i.fields.issuetype.name === activeFilter);
+
+  const sorted = [...issues].sort((a, b) => {
+    let av, bv;
+    switch (sortState.key) {
+      case 'key':       av = a.key;                                              bv = b.key; break;
+      case 'type':      av = a.fields.issuetype.name;                            bv = b.fields.issuetype.name; break;
+      case 'summary':   av = a.fields.summary;                                   bv = b.fields.summary; break;
+      case 'component': av = (a.fields.components[0]||{}).name||'';             bv = (b.fields.components[0]||{}).name||''; break;
+      case 'status':    av = a.fields.status.name;                               bv = b.fields.status.name; break;
+      case 'created':   av = a.fields.created;                                   bv = b.fields.created; break;
+      case 'resolved':  av = a.fields.resolutiondate||'';                        bv = b.fields.resolutiondate||''; break;
+      case 'wd':        av = a._wd  ?? -1;                                       bv = b._wd  ?? -1; break;
+      case 'bd':        av = a._bd  ?? -1;                                       bv = b._bd  ?? -1; break;
+      case 'uo':        av = parseFloat(a.fields[CFG.uoField]) || 0;             bv = parseFloat(b.fields[CFG.uoField]) || 0; break;
+      default:          av = a.key; bv = b.key;
+    }
+    if (av < bv) return -sortState.dir;
+    if (av > bv) return  sortState.dir;
+    return 0;
+  });
+
+  const tbody = document.getElementById('tbl-body');
+  tbody.innerHTML = sorted.map(issue => {
+    const isInc  = issue.fields.issuetype.id === CFG.incidentTypeId;
+    const comp   = (issue.fields.components||[]).map(c => c.name).join(', ') || '–';
+    const dotCls = statusDotClass(issue.fields.status.name);
+    const wd     = issue._wd != null ? `<span class="${wdClass(issue._wd)}">${issue._wd}</span>` : '<span style="color:var(--muted)">…</span>';
+    const bd     = issue._bd != null ? (issue._bd > 0 ? `<span style="color:var(--amber)">${issue._bd}</span>` : '0') : '–';
+    const uo     = parseFloat(issue.fields[CFG.uoField]);
+    const uoStr  = isNaN(uo) ? '–' : fmtEuro(uo);
+
+    return `<tr>
+      <td><a class="jira-link" href="${CFG.jiraBase}/browse/${issue.key}" target="_blank">${issue.key}</a></td>
+      <td><span class="badge ${isInc ? 'b-incident' : 'b-evolution'}">${issue.fields.issuetype.name}</span></td>
+      <td style="max-width:280px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="${issue.fields.summary.replace(/"/g,'&quot;')}">${issue.fields.summary}</td>
+      <td style="white-space:nowrap;color:var(--muted)">${comp}</td>
+      <td style="white-space:nowrap"><span class="dot ${dotCls}"></span>${issue.fields.status.name}</td>
+      <td style="white-space:nowrap">${fmtDate(issue.fields.created)}</td>
+      <td style="white-space:nowrap">${fmtDate(issue.fields.resolutiondate)}</td>
+      <td class="num-cell">${wd}</td>
+      <td class="num-cell">${bd}</td>
+      <td class="num-cell">${uoStr}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function doRefresh() {
+  const auth = getAuth();
+  if (!auth) return;
+
+  const year = new Date().getFullYear();
+  const holidays = buildHolidaySet(year);
+
+  setLoading(true, 'Chargement des tickets…');
+  showBanner('err', null);
+  showBanner('info', null);
+
+  try {
+    allIssues = await fetchIssues(year);
+    renderKPIs(allIssues, year);
+    renderCharts(allIssues);
+    renderTable();
+
+    if (allIssues.length === 0) {
+      showBanner('info', `Aucun ticket Incident ou Évolution trouvé pour le projet TMA en ${year}.`);
+      return;
+    }
+
+    const clProg  = document.getElementById('cl-progress');
+    const clFill  = document.getElementById('cl-fill');
+    const clLabel = document.getElementById('cl-label');
+    clProg.style.display = 'block';
+
+    const BATCH = 6;
+    for (let i = 0; i < allIssues.length; i += BATCH) {
+      const batch = allIssues.slice(i, i + BATCH);
+      setLoading(true, `Historiques ${i}/${allIssues.length}…`);
+
+      await Promise.all(batch.map(async issue => {
+        try {
+          const histories      = await fetchChangelog(issue.key);
+          const blockedPeriods = extractBlockedPeriods(histories);
+          const start = new Date(issue.fields.created);
+          const end   = issue.fields.resolutiondate ? new Date(issue.fields.resolutiondate) : new Date();
+          issue._wd = countWorkingDays(start, end, blockedPeriods, holidays);
+          issue._bd = countBlockedWorkingDays(blockedPeriods, holidays);
+        } catch {
+          issue._wd = null;
+          issue._bd = 0;
+        }
+      }));
+
+      const pct = Math.min(100, Math.round(((i + BATCH) / allIssues.length) * 100));
+      clFill.style.width = pct + '%';
+      clLabel.textContent = `Historiques récupérés : ${Math.min(i + BATCH, allIssues.length)} / ${allIssues.length}`;
+      renderTable();
+    }
+
+    clProg.style.display = 'none';
+    document.getElementById('last-refresh').textContent =
+      'Mise à jour : ' + new Date().toLocaleTimeString('fr-FR');
+
+  } catch (err) {
+    let msg = err.message;
+    if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('cors')) {
+      msg += '\n\nCORS : si vous ouvrez ce fichier en local (file://), servez-le via un serveur HTTP local.';
+    }
+    showBanner('err', msg);
+    console.error(err);
+  } finally {
+    setLoading(false);
+  }
+}
+
+function setLoading(on, text) {
+  const el  = document.getElementById('hdr-loading');
+  const btn = document.getElementById('refresh-btn');
+  el.style.display  = on ? 'inline' : 'none';
+  btn.disabled      = on;
+  if (text) document.getElementById('hdr-loading-text').textContent = text;
+}
+
+function showBanner(type, msg) {
+  const id = type === 'err' ? 'err-banner' : 'info-banner';
+  const el = document.getElementById(id);
+  el.style.display = msg ? 'block' : 'none';
+  if (msg) el.textContent = msg;
+}
+
+(function init() {
+  const auth = getAuth();
+  if (auth) {
+    document.getElementById('login-overlay').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+    doRefresh();
+  }
+  ['inp-email', 'inp-token'].forEach(id =>
+    document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); })
+  );
+})();
+</script>
+</body>
+</html>
