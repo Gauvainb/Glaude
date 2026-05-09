@@ -1,8 +1,8 @@
 /**
  * CORS Proxy – Cloudflare Worker
  * ──────────────────────────────
- * Proxies requests to cetim-si.atlassian.net and adds CORS headers
- * so the TMA dashboard can be served from any origin (GitHub Pages, etc.)
+ * Proxies GET and POST requests to cetim-si.atlassian.net and adds CORS
+ * headers so the TMA dashboard can be served from any origin (GitHub Pages).
  *
  * Deploy:
  *   1. Go to https://workers.cloudflare.com and create a free account
@@ -10,15 +10,15 @@
  *   3. Copy the worker URL (e.g. https://tma-proxy.YOUR_SUBDOMAIN.workers.dev)
  *   4. Enter it in the dashboard login form under "Paramètres avancés"
  *
- * Usage: GET https://your-worker.workers.dev?url=https://cetim-si.atlassian.net/...
- *        All request headers (Authorization, Accept) are forwarded as-is.
+ * Usage: https://your-worker.workers.dev?url=https://cetim-si.atlassian.net/...
+ *        Method and body are forwarded as-is. Authorization header is forwarded.
  */
 
 const ALLOWED_HOST = 'cetim-si.atlassian.net';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Authorization, Accept, Content-Type',
   'Access-Control-Max-Age':       '86400',
 };
@@ -30,7 +30,7 @@ export default {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
 
-    if (request.method !== 'GET') {
+    if (!['GET', 'POST'].includes(request.method)) {
       return new Response('Method not allowed', { status: 405, headers: CORS_HEADERS });
     }
 
@@ -57,17 +57,21 @@ export default {
       });
     }
 
-    // Forward Authorization and Accept headers
+    // Build forwarded headers
     const forwardHeaders = new Headers();
-    const auth   = request.headers.get('Authorization');
-    const accept = request.headers.get('Accept') || 'application/json';
-    if (auth) forwardHeaders.set('Authorization', auth);
+    const auth        = request.headers.get('Authorization');
+    const accept      = request.headers.get('Accept') || 'application/json';
+    const contentType = request.headers.get('Content-Type');
+    if (auth)        forwardHeaders.set('Authorization', auth);
+    if (contentType) forwardHeaders.set('Content-Type', contentType);
     forwardHeaders.set('Accept', accept);
 
-    // Proxy the request
+    // Proxy the request, forwarding body for POST
     let response;
     try {
-      response = await fetch(target, { method: 'GET', headers: forwardHeaders });
+      const init = { method: request.method, headers: forwardHeaders };
+      if (request.method === 'POST') init.body = request.body;
+      response = await fetch(target, init);
     } catch (err) {
       return new Response(`Upstream fetch failed: ${err.message}`, {
         status: 502,
