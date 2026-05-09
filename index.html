@@ -199,7 +199,7 @@
       <span id="hdr-loading" style="display:none;font-size:.82rem;color:var(--muted)">
         <span class="spinner"></span><span id="hdr-loading-text">Chargement…</span>
       </span>
-      <button class="btn-primary" id="refresh-btn" onclick="doRefresh()">⟳ Actualiser</button>
+      <button class="btn-primary" id="refresh-btn" onclick="doRefresh()">&#x27F3; Actualiser</button>
       <button class="btn-sm" onclick="doLogout()">Déconnexion</button>
     </div>
   </header>
@@ -456,15 +456,31 @@ function extractBlockedPeriods(histories) {
 /* ══════════════════════════════════════════════════
    JIRA API
 ══════════════════════════════════════════════════ */
-async function jiraGet(path) {
-  const auth  = getAuth();
+function proxyUrl(fullUrl) {
   const proxy = localStorage.getItem('tma_proxy') || '';
-  const full  = CFG.jiraBase + path;
-  const url   = proxy
-    ? proxy.replace(/\/$/, '') + '?url=' + encodeURIComponent(full)
-    : full;
-  const res = await fetch(url, {
+  return proxy
+    ? proxy.replace(/\/$/, '') + '?url=' + encodeURIComponent(fullUrl)
+    : fullUrl;
+}
+
+async function jiraGet(path) {
+  const auth = getAuth();
+  const res  = await fetch(proxyUrl(CFG.jiraBase + path), {
     headers: { 'Authorization': auth, 'Accept': 'application/json' }
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`Jira API ${res.status}: ${txt.slice(0,200)}`);
+  }
+  return res.json();
+}
+
+async function jiraPost(path, body) {
+  const auth = getAuth();
+  const res  = await fetch(proxyUrl(CFG.jiraBase + path), {
+    method:  'POST',
+    headers: { 'Authorization': auth, 'Accept': 'application/json', 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
   });
   if (!res.ok) {
     const txt = await res.text().catch(() => '');
@@ -477,23 +493,23 @@ async function fetchIssues(year) {
   const fields = [
     'summary','status','issuetype','created','resolutiondate',
     'components','assignee','priority', CFG.uoField
-  ].join(',');
-
-  const jql = encodeURIComponent(
+  ];
+  const jql =
     `project = ${CFG.projectKey}` +
     ` AND issuetype in (Incident, Evolution)` +
     ` AND created >= "${year}-01-01"` +
     ` AND created <= "${year}-12-31"` +
-    ` ORDER BY created ASC`
-  );
+    ` ORDER BY created ASC`;
 
-  let issues = [], start = 0;
+  let issues = [], nextPageToken;
   const MAX = 100;
   while (true) {
-    const data = await jiraGet(`/rest/api/3/search?jql=${jql}&fields=${fields}&maxResults=${MAX}&startAt=${start}`);
+    const body = { jql, fields, maxResults: MAX };
+    if (nextPageToken) body.nextPageToken = nextPageToken;
+    const data = await jiraPost('/rest/api/3/search/jql', body);
     issues = issues.concat(data.issues || []);
-    if (issues.length >= data.total || !(data.issues||[]).length) break;
-    start += MAX;
+    nextPageToken = data.nextPageToken;
+    if (!nextPageToken || !(data.issues||[]).length) break;
   }
   return issues;
 }
